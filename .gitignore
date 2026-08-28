@@ -1,6 +1,7 @@
 .env
 .vscode/
-GO_URL_SHORTENER_NOTES.md
 bin/
+cmd/gophermart/gophermart
+cmd/gophermart/main
 coverage.out
 *.log

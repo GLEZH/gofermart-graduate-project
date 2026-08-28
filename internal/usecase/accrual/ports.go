@@ -30,4 +30,5 @@ type orderStore interface {
 	Pending(ctx context.Context, limit int) ([]order.Order, error)
 	UpdateStatus(ctx context.Context, number order.Number, status order.Status) error
 	Settle(ctx context.Context, number order.Number, amount *loyalty.Amount) error
+	Defer(ctx context.Context, number order.Number, retryAfter time.Duration) error
 }

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"testing"
+	"time"
 
 	"github.com/GLEZH/gofermart-graduate-project/internal/domain/loyalty"
 	"github.com/GLEZH/gofermart-graduate-project/internal/domain/order"
@@ -133,6 +134,63 @@ func TestStore(t *testing.T) {
 	}
 	if database.SQLDB() == nil {
 		t.Fatal("SQLDB() = nil")
+	}
+}
+
+func TestPendingSkipsDeferredOrders(t *testing.T) {
+	database := testDatabase(t)
+	if err := database.Migrate(); err != nil {
+		t.Fatal(err)
+	}
+	store := NewStore(database.SQLDB())
+	ctx := context.Background()
+	owner, err := store.CreateWithAccount(ctx, "deferred", "hash")
+	if err != nil {
+		t.Fatal(err)
+	}
+	unknown, known := order.Number("9278923470"), order.Number("12345678903")
+	for _, number := range []order.Number{unknown, known} {
+		if err = store.Submit(ctx, owner.ID, number); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if pending, err := store.Pending(ctx, 10); err != nil || len(pending) != 2 {
+		t.Fatalf("Pending() = %+v, %v", pending, err)
+	}
+
+	if err = store.Defer(ctx, unknown, time.Minute); err != nil {
+		t.Fatal(err)
+	}
+	pending, err := store.Pending(ctx, 1)
+	if err != nil || len(pending) != 1 || pending[0].Number != known {
+		t.Fatalf("deferred order still occupies the batch: %+v, %v", pending, err)
+	}
+
+	if err = store.Defer(ctx, unknown, 50*time.Millisecond); err != nil {
+		t.Fatal(err)
+	}
+	time.Sleep(150 * time.Millisecond)
+	pending, err = store.Pending(ctx, 10)
+	if err != nil || len(pending) != 2 {
+		t.Fatalf("deferred order did not return: %+v, %v", pending, err)
+	}
+	for _, item := range pending {
+		if item.Number == unknown && item.Attempts != 2 {
+			t.Fatalf("attempts = %d, want 2", item.Attempts)
+		}
+	}
+
+	if err = store.UpdateStatus(ctx, unknown, order.StatusProcessing); err != nil {
+		t.Fatal(err)
+	}
+	pending, err = store.Pending(ctx, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, item := range pending {
+		if item.Number == unknown && item.Attempts != 0 {
+			t.Fatalf("attempts after status update = %d, want 0", item.Attempts)
+		}
 	}
 }
 

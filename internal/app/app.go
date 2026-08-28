@@ -63,7 +63,7 @@ func New(ctx context.Context, cfg *config.Config) (*App, error) {
 	orderService := orders.NewService(store)
 	balanceService := balance.NewService(store)
 	calculator := accrualadapter.NewClient(cfg.AccrualSystemAddress, nil)
-	processor := accrualusecase.NewProcessor(calculator, store)
+	processor := accrualusecase.NewProcessor(calculator, store, cfg.AccrualPollInterval)
 	sugar := logger.Sugar()
 	httpServer := httpapi.NewServer(authService, orderService, balanceService, tokens, sugar)
 

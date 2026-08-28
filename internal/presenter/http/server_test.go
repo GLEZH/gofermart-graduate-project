@@ -122,7 +122,10 @@ func TestAuthHandlers(t *testing.T) {
 				t.Fatalf("status = %d, want %d", recorder.Code, test.wantStatus)
 			}
 			if test.wantToken != "" {
-				if recorder.Header().Get("Authorization") != "Bearer "+test.wantToken || len(recorder.Result().Cookies()) != 1 {
+				response := recorder.Result()
+				cookies := response.Cookies()
+				_ = response.Body.Close()
+				if recorder.Header().Get("Authorization") != "Bearer "+test.wantToken || len(cookies) != 1 {
 					t.Fatalf("authentication response = %v", recorder.Header())
 				}
 			}
@@ -176,7 +179,7 @@ func TestOrderHandlers(t *testing.T) {
 		{name: "same user", body: "9278923470", err: order.ErrOwnedByUser, wantStatus: 200},
 		{name: "other user", body: "9278923470", err: order.ErrOwnedByAnotherUser, wantStatus: 409},
 		{name: "bad checksum", body: "123", err: order.ErrInvalidNumber, wantStatus: 422},
-		{name: "not digits", body: "abc", wantStatus: 400},
+		{name: "not digits", body: "abc", err: order.ErrInvalidNumber, wantStatus: 422},
 		{name: "empty", body: " ", wantStatus: 400},
 		{name: "internal", body: "9278923470", err: errors.New("db"), wantStatus: 500},
 	}

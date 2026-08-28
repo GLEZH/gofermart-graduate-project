@@ -178,7 +178,7 @@ func (s *Store) ListWithdrawals(ctx context.Context, userID user.ID) ([]loyalty.
 func (s *Store) Pending(ctx context.Context, limit int) ([]order.Order, error) {
 	ctx, cancel := context.WithTimeout(ctx, operationTimeout)
 	defer cancel()
-	rows, err := s.db.QueryContext(ctx, `SELECT number, user_id, status, uploaded_at FROM orders WHERE status IN ('NEW', 'PROCESSING') ORDER BY uploaded_at LIMIT $1`, limit)
+	rows, err := s.db.QueryContext(ctx, `SELECT number, user_id, status, uploaded_at, attempts FROM orders WHERE status IN ('NEW', 'PROCESSING') AND next_attempt_at <= now() ORDER BY next_attempt_at LIMIT $1`, limit)
 	if err != nil {
 		return nil, fmt.Errorf("list pending orders: %w", err)
 	}
@@ -187,7 +187,7 @@ func (s *Store) Pending(ctx context.Context, limit int) ([]order.Order, error) {
 	for rows.Next() {
 		var item order.Order
 		var number string
-		if err = rows.Scan(&number, &item.UserID, &item.Status, &item.UploadedAt); err != nil {
+		if err = rows.Scan(&number, &item.UserID, &item.Status, &item.UploadedAt, &item.Attempts); err != nil {
 			return nil, fmt.Errorf("scan pending order: %w", err)
 		}
 		item.Number = order.Number(number)
@@ -199,9 +199,19 @@ func (s *Store) Pending(ctx context.Context, limit int) ([]order.Order, error) {
 func (s *Store) UpdateStatus(ctx context.Context, number order.Number, status order.Status) error {
 	ctx, cancel := context.WithTimeout(ctx, operationTimeout)
 	defer cancel()
-	_, err := s.db.ExecContext(ctx, `UPDATE orders SET status = $2 WHERE number = $1 AND status NOT IN ('INVALID', 'PROCESSED')`, number.String(), status)
+	_, err := s.db.ExecContext(ctx, `UPDATE orders SET status = $2, attempts = 0, next_attempt_at = now() WHERE number = $1 AND status NOT IN ('INVALID', 'PROCESSED')`, number.String(), status)
 	if err != nil {
 		return fmt.Errorf("update order status: %w", err)
+	}
+	return nil
+}
+
+func (s *Store) Defer(ctx context.Context, number order.Number, retryAfter time.Duration) error {
+	ctx, cancel := context.WithTimeout(ctx, operationTimeout)
+	defer cancel()
+	_, err := s.db.ExecContext(ctx, `UPDATE orders SET attempts = attempts + 1, next_attempt_at = now() + make_interval(secs => $2) WHERE number = $1 AND status IN ('NEW', 'PROCESSING')`, number.String(), retryAfter.Seconds())
+	if err != nil {
+		return fmt.Errorf("defer order: %w", err)
 	}
 	return nil
 }

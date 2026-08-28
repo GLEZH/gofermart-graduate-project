@@ -27,7 +27,7 @@ func (s *Server) submitOrder(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	value := strings.TrimSpace(string(body))
-	if value == "" || !digitsOnly(value) {
+	if value == "" {
 		w.WriteHeader(http.StatusBadRequest)
 		return
 	}
@@ -65,15 +65,6 @@ func (s *Server) listOrders(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 	writeJSON(w, http.StatusOK, response)
-}
-
-func digitsOnly(value string) bool {
-	for i := range value {
-		if value[i] < '0' || value[i] > '9' {
-			return false
-		}
-	}
-	return true
 }
 
 func writeJSON(w http.ResponseWriter, status int, value any) {

@@ -22,6 +22,7 @@ type Order struct {
 	Status     Status
 	Accrual    *loyalty.Amount
 	UploadedAt time.Time
+	Attempts   int
 }
 
 func (s Status) Final() bool {
