@@ -1,0 +1,21 @@
+{{ if .Status }}
+  <div class="endpoint">
+    <span class="badge {{ statusClass .Status }}">{{ .Status }} {{ .Reason }}</span>
+    <b>{{ .Method }}</b> {{ .Path }}
+  </div>
+  {{ if .Request }}
+    <div>
+      <p class="endpoint">Тело запроса</p>
+      <pre>{{ .Request }}</pre>
+    </div>
+  {{ end }}
+  <div>
+    <p class="endpoint">Тело ответа</p>
+    {{ if .Empty }}<p class="empty">Пустое — хендлер отвечает только кодом.</p>{{ else }}<pre>{{ .Body }}</pre>{{ end }}
+  </div>
+{{ else }}
+  <div class="endpoint">
+    <span class="badge err">{{ .Title }}</span>
+  </div>
+  {{ if .Reason }}<pre>{{ .Reason }}</pre>{{ end }}
+{{ end }}

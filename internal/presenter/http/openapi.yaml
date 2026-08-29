@@ -1,0 +1,366 @@
+openapi: 3.0.3
+
+info:
+  title: Гофермарт — накопительная система лояльности
+  version: "1.0.0"
+  description: |
+    HTTP API накопительной системы лояльности «Гофермарт».
+
+    Аутентификация выполняется по паре логин/пароль. Успешные `POST /api/user/register`
+    и `POST /api/user/login` возвращают JWT одновременно двумя способами:
+
+    * в заголовке `Authorization: Bearer <token>`;
+    * в httpOnly-куке `gophermart_token`.
+
+    Любого из них достаточно для доступа к защищённым хендлерам.
+
+    Баллы лояльности передаются числом в рублях, дробная часть — копейки
+    (`500.55`). Сервер хранит суммы в целых копейках, поэтому округления не происходит.
+
+servers:
+  - url: /
+    description: Текущий хост
+
+tags:
+  - name: Аутентификация
+    description: Регистрация и вход
+  - name: Заказы
+    description: Загрузка номеров заказов и просмотр статусов расчёта
+  - name: Баланс
+    description: Накопительный счёт и списания
+
+security:
+  - bearerAuth: []
+  - cookieAuth: []
+
+paths:
+  /api/user/register:
+    post:
+      tags: [Аутентификация]
+      summary: Регистрация пользователя
+      description: |
+        Регистрирует пользователя по паре логин/пароль и сразу же его аутентифицирует.
+        Каждый логин уникален.
+      operationId: registerUser
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/Credentials"
+            examples:
+              default:
+                value:
+                  login: gopher
+                  password: correct-horse-battery-staple
+      responses:
+        "200":
+          $ref: "#/components/responses/Authenticated"
+        "400":
+          description: Неверный формат запроса
+        "409":
+          description: Логин уже занят
+        "500":
+          description: Внутренняя ошибка сервера
+
+  /api/user/login:
+    post:
+      tags: [Аутентификация]
+      summary: Аутентификация пользователя
+      operationId: loginUser
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/Credentials"
+            examples:
+              default:
+                value:
+                  login: gopher
+                  password: correct-horse-battery-staple
+      responses:
+        "200":
+          $ref: "#/components/responses/Authenticated"
+        "400":
+          description: Неверный формат запроса
+        "401":
+          description: Неверная пара логин/пароль
+        "500":
+          description: Внутренняя ошибка сервера
+
+  /api/user/orders:
+    post:
+      tags: [Заказы]
+      summary: Загрузка номера заказа
+      description: |
+        Принимает номер заказа для расчёта начислений. Номер — последовательность цифр
+        произвольной длины, проходящая проверку по алгоритму Луна.
+      operationId: submitOrder
+      requestBody:
+        required: true
+        content:
+          text/plain:
+            schema:
+              type: string
+              pattern: "^[0-9]+$"
+              example: "12345678903"
+      responses:
+        "200":
+          description: Номер заказа уже был загружен этим пользователем
+        "202":
+          description: Новый номер заказа принят в обработку
+        "400":
+          description: Неверный формат запроса (пустое тело)
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "409":
+          description: Номер заказа уже был загружен другим пользователем
+        "422":
+          description: Неверный формат номера заказа
+        "500":
+          description: Внутренняя ошибка сервера
+
+    get:
+      tags: [Заказы]
+      summary: Список загруженных номеров заказов
+      description: Заказы отсортированы по времени загрузки, от самых новых к самым старым.
+      operationId: listOrders
+      responses:
+        "200":
+          description: Успешная обработка запроса
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Order"
+              examples:
+                default:
+                  value:
+                    - number: "9278923470"
+                      status: PROCESSED
+                      accrual: 500
+                      uploaded_at: "2020-12-10T15:15:45+03:00"
+                    - number: "12345678903"
+                      status: PROCESSING
+                      uploaded_at: "2020-12-10T15:12:01+03:00"
+                    - number: "346436439"
+                      status: INVALID
+                      uploaded_at: "2020-12-09T16:09:53+03:00"
+        "204":
+          description: Нет данных для ответа
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "500":
+          description: Внутренняя ошибка сервера
+
+  /api/user/balance:
+    get:
+      tags: [Баланс]
+      summary: Текущий баланс баллов лояльности
+      operationId: getBalance
+      responses:
+        "200":
+          description: Успешная обработка запроса
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Balance"
+              examples:
+                default:
+                  value:
+                    current: 500.5
+                    withdrawn: 42
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "500":
+          description: Внутренняя ошибка сервера
+
+  /api/user/balance/withdraw:
+    post:
+      tags: [Баланс]
+      summary: Списание баллов в счёт оплаты нового заказа
+      description: |
+        `order` — гипотетический номер нового заказа, в счёт оплаты которого списываются
+        баллы; он также проверяется по алгоритму Луна. Внешних систем списание не затрагивает.
+      operationId: withdraw
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/WithdrawalRequest"
+            examples:
+              default:
+                value:
+                  order: "2377225624"
+                  sum: 751
+      responses:
+        "200":
+          description: Успешная обработка запроса
+        "400":
+          description: Неверный формат запроса или неположительная сумма списания
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "402":
+          description: На счету недостаточно средств
+        "422":
+          description: Неверный номер заказа
+        "500":
+          description: Внутренняя ошибка сервера
+
+  /api/user/withdrawals:
+    get:
+      tags: [Баланс]
+      summary: Информация о выводе средств
+      description: Списания отсортированы по времени, от самых новых к самым старым.
+      operationId: listWithdrawals
+      responses:
+        "200":
+          description: Успешная обработка запроса
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Withdrawal"
+              examples:
+                default:
+                  value:
+                    - order: "2377225624"
+                      sum: 500
+                      processed_at: "2020-12-09T16:09:57+03:00"
+        "204":
+          description: Нет ни одного списания
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "500":
+          description: Внутренняя ошибка сервера
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: JWT из заголовка `Authorization` успешного входа.
+    cookieAuth:
+      type: apiKey
+      in: cookie
+      name: gophermart_token
+      description: httpOnly-кука, которую сервер ставит при успешном входе.
+
+  responses:
+    Authenticated:
+      description: Пользователь аутентифицирован
+      headers:
+        Authorization:
+          description: JWT доступа в формате `Bearer <token>`
+          schema:
+            type: string
+            example: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+        Set-Cookie:
+          description: httpOnly-кука `gophermart_token` с тем же токеном
+          schema:
+            type: string
+            example: gophermart_token=eyJhbGciOi...; Path=/; HttpOnly; SameSite=Lax
+    Unauthorized:
+      description: Пользователь не аутентифицирован
+
+  schemas:
+    Credentials:
+      type: object
+      required: [login, password]
+      properties:
+        login:
+          type: string
+          minLength: 1
+          example: gopher
+        password:
+          type: string
+          format: password
+          minLength: 1
+          example: correct-horse-battery-staple
+
+    OrderStatus:
+      type: string
+      description: |
+        * `NEW` — заказ загружен в систему, но не попал в обработку;
+        * `PROCESSING` — вознаграждение за заказ рассчитывается;
+        * `INVALID` — система расчёта вознаграждений отказала в расчёте;
+        * `PROCESSED` — расчёт получен, баллы начислены.
+      enum: [NEW, PROCESSING, INVALID, PROCESSED]
+
+    Order:
+      type: object
+      required: [number, status, uploaded_at]
+      properties:
+        number:
+          type: string
+          pattern: "^[0-9]+$"
+          example: "9278923470"
+        status:
+          $ref: "#/components/schemas/OrderStatus"
+        accrual:
+          type: number
+          format: double
+          minimum: 0
+          description: Начисленные баллы. При отсутствии начисления поле отсутствует.
+          example: 500
+        uploaded_at:
+          type: string
+          format: date-time
+          example: "2020-12-10T15:15:45+03:00"
+
+    Balance:
+      type: object
+      required: [current, withdrawn]
+      properties:
+        current:
+          type: number
+          format: double
+          minimum: 0
+          description: Доступные баллы
+          example: 500.5
+        withdrawn:
+          type: number
+          format: double
+          minimum: 0
+          description: Сумма списаний за весь период
+          example: 42
+
+    WithdrawalRequest:
+      type: object
+      required: [order, sum]
+      properties:
+        order:
+          type: string
+          pattern: "^[0-9]+$"
+          description: Номер заказа, в счёт оплаты которого списываются баллы
+          example: "2377225624"
+        sum:
+          type: number
+          format: double
+          exclusiveMinimum: true
+          minimum: 0
+          example: 751
+
+    Withdrawal:
+      type: object
+      required: [order, sum, processed_at]
+      properties:
+        order:
+          type: string
+          pattern: "^[0-9]+$"
+          example: "2377225624"
+        sum:
+          type: number
+          format: double
+          example: 500
+        processed_at:
+          type: string
+          format: date-time
+          example: "2020-12-09T16:09:57+03:00"

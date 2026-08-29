@@ -85,14 +85,22 @@ func (w *gzipWriter) flushHeader() {
 	if w.status == 0 {
 		w.status = http.StatusOK
 	}
-	contentType := w.Header().Get("Content-Type")
-	if w.compress && (strings.HasPrefix(contentType, "application/json") || strings.HasPrefix(contentType, "text/")) {
+	if w.compress && compressible(w.Header().Get("Content-Type")) {
 		w.Header().Set("Content-Encoding", "gzip")
 		w.Header().Del("Content-Length")
 		w.writer = gzip.NewWriter(w.ResponseWriter)
 	}
 	w.ResponseWriter.WriteHeader(w.status)
 	w.wroteHeader = true
+}
+
+func compressible(contentType string) bool {
+	for _, prefix := range []string{"text/", "application/json", "application/yaml"} {
+		if strings.HasPrefix(contentType, prefix) {
+			return true
+		}
+	}
+	return false
 }
 
 func gzipMiddleware(next http.Handler) http.Handler {

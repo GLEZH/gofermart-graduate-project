@@ -1,0 +1,23 @@
+{{ if eq .Status 200 }}
+  <table>
+    <thead>
+      <tr><th>Номер</th><th>Статус</th><th class="num">Начислено</th><th>Загружен</th></tr>
+    </thead>
+    <tbody>
+      {{ range .Items }}
+        <tr>
+          <td class="mono">{{ .Number }}</td>
+          <td><span class="badge {{ orderClass .Status }}">{{ .Status }}</span></td>
+          <td class="num">{{ if .Accrual }}{{ .Accrual }}{{ else }}—{{ end }}</td>
+          <td class="mono">{{ .UploadedAt }}</td>
+        </tr>
+      {{ end }}
+    </tbody>
+  </table>
+{{ else if eq .Status 204 }}
+  <p class="empty">Заказов пока нет — <span class="badge muted">204 No Content</span></p>
+{{ else if eq .Status 401 }}
+  <p class="empty">Нужен вход — <span class="badge warn">401 Unauthorized</span></p>
+{{ else }}
+  <p class="empty">Не удалось получить список — <span class="badge {{ statusClass .Status }}">{{ .Status }}</span></p>
+{{ end }}

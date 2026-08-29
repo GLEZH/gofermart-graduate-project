@@ -1,0 +1,10 @@
+{{ if eq .Status 200 }}
+  <div class="metrics">
+    <div class="metric"><span>Доступно</span><strong>{{ .Balance.Current }}</strong></div>
+    <div class="metric"><span>Списано за всё время</span><strong>{{ .Balance.Withdrawn }}</strong></div>
+  </div>
+{{ else if eq .Status 401 }}
+  <p class="empty">Нужен вход — <span class="badge warn">401 Unauthorized</span></p>
+{{ else }}
+  <p class="empty">Не удалось получить баланс — <span class="badge {{ statusClass .Status }}">{{ .Status }}</span></p>
+{{ end }}

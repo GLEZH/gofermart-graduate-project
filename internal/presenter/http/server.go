@@ -39,18 +39,37 @@ type Server struct {
 	tokens  tokenVerifier
 	log     *zap.SugaredLogger
 	cookie  string
+
+	// api обслуживает только /api/user/*. Консоль переиспользует его, чтобы
+	// показывать ответы настоящих хендлеров, а не их копии.
+	api    http.Handler
+	router http.Handler
 }
 
 func NewServer(auth authService, orders orderService, balance balanceService, tokens tokenVerifier, log *zap.SugaredLogger) *Server {
-	return &Server{auth: auth, orders: orders, balance: balance, tokens: tokens, log: log, cookie: "gophermart_token"}
+	server := &Server{auth: auth, orders: orders, balance: balance, tokens: tokens, log: log, cookie: "gophermart_token"}
+
+	api := chi.NewRouter()
+	server.mountAPI(api)
+	server.api = api
+
+	router := chi.NewRouter()
+	router.Use(server.recoverer)
+	router.Use(server.logging)
+	router.Use(gzipMiddleware)
+	server.mountAPI(router)
+	server.mountDocs(router)
+	server.mountConsole(router)
+	server.router = router
+
+	return server
 }
 
 func (s *Server) Router() http.Handler {
-	router := chi.NewRouter()
-	router.Use(s.recoverer)
-	router.Use(s.logging)
-	router.Use(gzipMiddleware)
+	return s.router
+}
 
+func (s *Server) mountAPI(router chi.Router) {
 	router.Post("/api/user/register", s.register)
 	router.Post("/api/user/login", s.login)
 	router.Group(func(protected chi.Router) {
@@ -61,7 +80,6 @@ func (s *Server) Router() http.Handler {
 		protected.Post("/api/user/balance/withdraw", s.withdraw)
 		protected.Get("/api/user/withdrawals", s.listWithdrawals)
 	})
-	return router
 }
 
 func (s *Server) internalError(w http.ResponseWriter, err error) {

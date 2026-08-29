@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Гофермарт — Swagger UI</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>&#128220;</text></svg>">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/swagger-ui-dist@5.17.14/swagger-ui.css"
+      integrity="sha384-wxLW6kwyHktdDGr6Pv1zgm/VGJh99lfUbzSn6HNHBENZlCN7W602k9VkGdxuFvPn"
+      crossorigin="anonymous">
+<style>
+  body { margin: 0; background: #fafafa; }
+  .topbar { display: none; }
+  #back { position: fixed; top: 12px; right: 16px; z-index: 10; font: 14px/1 system-ui, sans-serif; }
+</style>
+</head>
+<body>
+<a id="back" href="/ui">← Консоль API</a>
+<div id="swagger-ui"></div>
+<script src="https://cdn.jsdelivr.net/npm/swagger-ui-dist@5.17.14/swagger-ui-bundle.js"
+        integrity="sha384-wmyclcVGX/WhUkdkATwhaK1X1JtiNrr2EoYJ+diV3vj4v6OC5yCeSu+yW13SYJep"
+        crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/swagger-ui-dist@5.17.14/swagger-ui-standalone-preset.js"
+        integrity="sha384-2YH8WDRaj7V2OqU/trsmzSagmk/E2SutiCsGkdgoQwC9pNUJV1u/141DHB6jgs8t"
+        crossorigin="anonymous"></script>
+<script>
+  window.onload = function () {
+    SwaggerUIBundle({
+      url: {{ .Spec }},
+      dom_id: '#swagger-ui',
+      deepLinking: true,
+      withCredentials: true,
+      persistAuthorization: true,
+      tryItOutEnabled: true,
+      presets: [SwaggerUIBundle.presets.apis, SwaggerUIStandalonePreset],
+      layout: 'StandaloneLayout'
+    });
+  };
+</script>
+</body>
+</html>

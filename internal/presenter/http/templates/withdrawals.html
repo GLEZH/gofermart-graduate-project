@@ -1,0 +1,22 @@
+{{ if eq .Status 200 }}
+  <table>
+    <thead>
+      <tr><th>Заказ</th><th class="num">Сумма</th><th>Обработано</th></tr>
+    </thead>
+    <tbody>
+      {{ range .Items }}
+        <tr>
+          <td class="mono">{{ .Order }}</td>
+          <td class="num">{{ .Sum }}</td>
+          <td class="mono">{{ .ProcessedAt }}</td>
+        </tr>
+      {{ end }}
+    </tbody>
+  </table>
+{{ else if eq .Status 204 }}
+  <p class="empty">Списаний пока нет — <span class="badge muted">204 No Content</span></p>
+{{ else if eq .Status 401 }}
+  <p class="empty">Нужен вход — <span class="badge warn">401 Unauthorized</span></p>
+{{ else }}
+  <p class="empty">Не удалось получить списания — <span class="badge {{ statusClass .Status }}">{{ .Status }}</span></p>
+{{ end }}
