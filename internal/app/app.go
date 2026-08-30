@@ -52,19 +52,19 @@ func New(ctx context.Context, cfg *config.Config) (*App, error) {
 		return nil, err
 	}
 	if err = database.Migrate(); err != nil {
-		_ = database.Close()
+		database.Close()
 		_ = logger.Sync()
 		return nil, fmt.Errorf("migrate database: %w", err)
 	}
 
-	store := postgres.NewStore(database.SQLDB())
+	sugar := logger.Sugar()
+	store := postgres.NewStore(database.Pool())
 	tokens := security.NewTokenManager(cfg.AuthSecret)
 	authService := usecaseauth.NewService(store, security.NewPasswordHasher(0), tokens)
 	orderService := orders.NewService(store)
 	balanceService := balance.NewService(store)
-	calculator := accrualadapter.NewClient(cfg.AccrualSystemAddress, nil)
+	calculator := accrualadapter.NewClient(cfg.AccrualSystemAddress, nil, sugar)
 	processor := accrualusecase.NewProcessor(calculator, store, cfg.AccrualPollInterval)
-	sugar := logger.Sugar()
 	httpServer := httpapi.NewServer(authService, orderService, balanceService, tokens, sugar)
 
 	return &App{
@@ -100,10 +100,6 @@ func (a *App) Run(ctx context.Context) error {
 }
 
 func (a *App) Close() error {
-	dbErr := a.db.Close()
-	logErr := a.log.Sync()
-	if dbErr != nil {
-		return dbErr
-	}
-	return logErr
+	a.db.Close()
+	return a.log.Sync()
 }

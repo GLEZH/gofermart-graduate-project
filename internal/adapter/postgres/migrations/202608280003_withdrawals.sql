@@ -1,6 +1,6 @@
 -- +goose Up
 CREATE TABLE withdrawals (
-    id BIGSERIAL PRIMARY KEY,
+    id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     order_number TEXT NOT NULL,
     amount BIGINT NOT NULL CHECK (amount > 0),

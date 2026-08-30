@@ -8,60 +8,72 @@ import (
 	"fmt"
 	"time"
 
-	_ "github.com/jackc/pgx/v5/stdlib"
+	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/jackc/pgx/v5/stdlib"
 	"github.com/pressly/goose/v3"
 )
 
 //go:embed migrations/*.sql
 var migrations embed.FS
 
+const (
+	migrationsDir   = "migrations"
+	maxConnections  = 20
+	maxConnIdleTime = 5 * time.Minute
+	connectTimeout  = 5 * time.Second
+)
+
 type Database struct {
-	db *sql.DB
+	pool *pgxpool.Pool
 }
 
 func NewDatabase(ctx context.Context, uri string) (*Database, error) {
 	if uri == "" {
 		return nil, errors.New("database URI is empty")
 	}
-	db, err := sql.Open("pgx", uri)
+	poolConfig, err := pgxpool.ParseConfig(uri)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("parse database URI: %w", err)
 	}
-	db.SetMaxOpenConns(20)
-	db.SetMaxIdleConns(10)
-	db.SetConnMaxIdleTime(5 * time.Minute)
+	poolConfig.MaxConns = maxConnections
+	poolConfig.MaxConnIdleTime = maxConnIdleTime
 
-	pingCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	pool, err := pgxpool.NewWithConfig(ctx, poolConfig)
+	if err != nil {
+		return nil, fmt.Errorf("create connection pool: %w", err)
+	}
+	pingCtx, cancel := context.WithTimeout(ctx, connectTimeout)
 	defer cancel()
-	if err = db.PingContext(pingCtx); err != nil {
-		_ = db.Close()
+	if err = pool.Ping(pingCtx); err != nil {
+		pool.Close()
 		return nil, fmt.Errorf("ping database: %w", err)
 	}
-	return &Database{db: db}, nil
+	return &Database{pool: pool}, nil
 }
 
 func (d *Database) Migrate() error {
-	goose.SetBaseFS(migrations)
-	defer goose.SetBaseFS(nil)
-	if err := goose.SetDialect("postgres"); err != nil {
-		return err
-	}
-	return goose.Up(d.db, "migrations")
+	return d.runMigrations(func(db *sql.DB) error { return goose.Up(db, migrationsDir) })
 }
 
 func (d *Database) Down() error {
+	return d.runMigrations(func(db *sql.DB) error { return goose.DownTo(db, migrationsDir, 0) })
+}
+
+func (d *Database) runMigrations(action func(*sql.DB) error) error {
 	goose.SetBaseFS(migrations)
 	defer goose.SetBaseFS(nil)
 	if err := goose.SetDialect("postgres"); err != nil {
 		return err
 	}
-	return goose.DownTo(d.db, "migrations", 0)
+	db := stdlib.OpenDBFromPool(d.pool)
+	defer db.Close()
+	return action(db)
 }
 
-func (d *Database) SQLDB() *sql.DB {
-	return d.db
+func (d *Database) Pool() *pgxpool.Pool {
+	return d.pool
 }
 
-func (d *Database) Close() error {
-	return d.db.Close()
+func (d *Database) Close() {
+	d.pool.Close()
 }

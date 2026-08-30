@@ -26,3 +26,8 @@ coverage.out
 *.log
 
 bin/
+
+.env
+
+.env.dev
+

@@ -4,8 +4,8 @@ services:
   postgres:
     image: postgres:16
     environment:
-      POSTGRES_USER: ${POSTGRES_USER:-gophermart}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-gophermart}
-      POSTGRES_DB: ${POSTGRES_DB:-gophermart}
+      POSTGRES_USER: ${DB_USER:-gophermart}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-gophermart}
+      POSTGRES_DB: ${DB_TABLE_NAME:-gophermart}
     ports:
-      - "${POSTGRES_PORT:-5432}:5432"
+      - "${DB_PORT:-5432}:5432"

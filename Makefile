@@ -2,8 +2,20 @@ include .env.dev
 
 COVERAGE_FILE = coverage.out
 
+DB_HOST ?= localhost
+DB_SSLMODE ?= disable
+DATABASE_URI ?= postgres://$(DB_USER):$(DB_PASSWORD)@$(DB_HOST):$(DB_PORT)/$(DB_TABLE_NAME)?sslmode=$(DB_SSLMODE)
+TEST_DATABASE_URI ?= $(DATABASE_URI)
+
 export RUN_ADDRESS
+export DB_HOST
+export DB_PORT
+export DB_USER
+export DB_PASSWORD
+export DB_TABLE_NAME
+export DB_SSLMODE
 export DATABASE_URI
+export TEST_DATABASE_URI
 export ACCRUAL_SYSTEM_ADDRESS
 export AUTH_SECRET
 export ACCRUAL_POLL_INTERVAL
@@ -33,4 +45,4 @@ test-ci:
 	@coverage=$$(go tool cover -func=$(COVERAGE_FILE) | awk '/^total:/ {gsub("%", "", $$3); print $$3}'); awk -v coverage="$$coverage" 'BEGIN {if (coverage < 80) {printf "coverage %.1f%% is below 80%%\n", coverage; exit 1}}'
 
 run:
-	DATABASE_URI="$(DATABASE_URI)" go run ./cmd/gophermart
+	go run ./cmd/gophermart

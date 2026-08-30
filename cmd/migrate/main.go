@@ -7,10 +7,14 @@ import (
 	"os"
 
 	"github.com/GLEZH/gofermart-graduate-project/internal/adapter/postgres"
+	"github.com/GLEZH/gofermart-graduate-project/internal/config"
 )
 
 func main() {
 	uri := os.Getenv("DATABASE_URI")
+	if uri == "" {
+		uri = config.DatabaseURIFromEnv()
+	}
 	flags := flag.NewFlagSet("migrate", flag.ExitOnError)
 	flags.StringVar(&uri, "d", uri, "database connection string")
 	_ = flags.Parse(os.Args[1:])

@@ -12,6 +12,8 @@ import (
 	"github.com/GLEZH/gofermart-graduate-project/internal/domain/order"
 )
 
+const maxOrderNumberBody = 1024
+
 type orderResponse struct {
 	Number     string          `json:"number"`
 	Status     order.Status    `json:"status"`
@@ -21,7 +23,8 @@ type orderResponse struct {
 
 func (s *Server) submitOrder(w http.ResponseWriter, r *http.Request) {
 	userID, _ := userIDFromContext(r.Context())
-	body, err := io.ReadAll(io.LimitReader(r.Body, 1024))
+	r.Body = http.MaxBytesReader(w, r.Body, maxOrderNumberBody)
+	body, err := io.ReadAll(r.Body)
 	if err != nil {
 		w.WriteHeader(http.StatusBadRequest)
 		return

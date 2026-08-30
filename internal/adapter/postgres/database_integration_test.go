@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"os"
+	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -12,26 +14,40 @@ import (
 	"github.com/GLEZH/gofermart-graduate-project/internal/domain/user"
 )
 
+const testSchema = "gophermart_test"
+
 func testDatabase(t *testing.T) *Database {
 	t.Helper()
 	uri := os.Getenv("TEST_DATABASE_URI")
 	if uri == "" {
 		t.Skip("TEST_DATABASE_URI is not set")
 	}
-	database, err := NewDatabase(context.Background(), uri)
+	database, err := NewDatabase(context.Background(), isolatedURI(uri))
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = database.db.Exec(`DROP SCHEMA IF EXISTS public CASCADE; CREATE SCHEMA public`)
-	if err != nil {
+	if err = resetSchema(database); err != nil {
 		database.Close()
 		t.Fatal(err)
 	}
 	t.Cleanup(func() {
-		_, _ = database.db.Exec(`DROP SCHEMA IF EXISTS public CASCADE; CREATE SCHEMA public`)
-		_ = database.Close()
+		_ = resetSchema(database)
+		database.Close()
 	})
 	return database
+}
+
+func isolatedURI(uri string) string {
+	separator := "?"
+	if strings.Contains(uri, "?") {
+		separator = "&"
+	}
+	return uri + separator + "search_path=" + testSchema
+}
+
+func resetSchema(database *Database) error {
+	_, err := database.pool.Exec(context.Background(), `DROP SCHEMA IF EXISTS `+testSchema+` CASCADE; CREATE SCHEMA `+testSchema)
+	return err
 }
 
 func TestMigrations(t *testing.T) {
@@ -41,7 +57,7 @@ func TestMigrations(t *testing.T) {
 	}
 	for _, table := range []string{"users", "loyalty_accounts", "orders", "withdrawals"} {
 		var exists bool
-		if err := database.db.QueryRow(`SELECT to_regclass('public.' || $1) IS NOT NULL`, table).Scan(&exists); err != nil || !exists {
+		if err := database.pool.QueryRow(context.Background(), `SELECT to_regclass($1) IS NOT NULL`, testSchema+"."+table).Scan(&exists); err != nil || !exists {
 			t.Fatalf("table %s exists=%t error=%v", table, exists, err)
 		}
 	}
@@ -49,7 +65,7 @@ func TestMigrations(t *testing.T) {
 		t.Fatal(err)
 	}
 	var exists bool
-	if err := database.db.QueryRow(`SELECT to_regclass('public.users') IS NOT NULL`).Scan(&exists); err != nil || exists {
+	if err := database.pool.QueryRow(context.Background(), `SELECT to_regclass($1) IS NOT NULL`, testSchema+".users").Scan(&exists); err != nil || exists {
 		t.Fatalf("users after down exists=%t error=%v", exists, err)
 	}
 	if err := database.Migrate(); err != nil {
@@ -62,7 +78,7 @@ func TestStore(t *testing.T) {
 	if err := database.Migrate(); err != nil {
 		t.Fatal(err)
 	}
-	store := NewStore(database.SQLDB())
+	store := NewStore(database.Pool())
 	ctx := context.Background()
 	first, err := store.CreateWithAccount(ctx, "first", "hash")
 	if err != nil || first.ID == 0 {
@@ -132,8 +148,63 @@ func TestStore(t *testing.T) {
 	if err != nil || items[0].Accrual == nil || *items[0].Accrual != 10000 {
 		t.Fatalf("processed orders = %+v, %v", items, err)
 	}
-	if database.SQLDB() == nil {
-		t.Fatal("SQLDB() = nil")
+	if database.Pool() == nil {
+		t.Fatal("Pool() = nil")
+	}
+}
+
+func TestWithdrawIsSerializedBetweenConcurrentCalls(t *testing.T) {
+	database := testDatabase(t)
+	if err := database.Migrate(); err != nil {
+		t.Fatal(err)
+	}
+	store := NewStore(database.Pool())
+	ctx := context.Background()
+	owner, err := store.CreateWithAccount(ctx, "concurrent", "hash")
+	if err != nil {
+		t.Fatal(err)
+	}
+	number := order.Number("9278923470")
+	if err = store.Submit(ctx, owner.ID, number); err != nil {
+		t.Fatal(err)
+	}
+	balance := loyalty.Amount(10000)
+	if err = store.Settle(ctx, number, &balance); err != nil {
+		t.Fatal(err)
+	}
+
+	const attempts = 8
+	start := make(chan struct{})
+	results := make(chan error, attempts)
+	var group sync.WaitGroup
+	for i := 0; i < attempts; i++ {
+		group.Add(1)
+		go func() {
+			defer group.Done()
+			<-start
+			results <- store.Withdraw(ctx, owner.ID, order.Number("12345678903"), balance)
+		}()
+	}
+	close(start)
+	group.Wait()
+	close(results)
+
+	succeeded := 0
+	for err = range results {
+		switch {
+		case err == nil:
+			succeeded++
+		case errors.Is(err, loyalty.ErrInsufficientFunds):
+		default:
+			t.Fatalf("Withdraw() = %v", err)
+		}
+	}
+	if succeeded != 1 {
+		t.Fatalf("successful withdrawals = %d, want 1", succeeded)
+	}
+	account, err := store.GetAccount(ctx, owner.ID)
+	if err != nil || account.Current != 0 || account.Withdrawn != balance {
+		t.Fatalf("account = %+v, %v", account, err)
 	}
 }
 
@@ -142,7 +213,7 @@ func TestPendingSkipsDeferredOrders(t *testing.T) {
 	if err := database.Migrate(); err != nil {
 		t.Fatal(err)
 	}
-	store := NewStore(database.SQLDB())
+	store := NewStore(database.Pool())
 	ctx := context.Background()
 	owner, err := store.CreateWithAccount(ctx, "deferred", "hash")
 	if err != nil {
