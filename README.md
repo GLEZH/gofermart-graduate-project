@@ -1,25 +1,34 @@
-# go-musthave-diploma-tpl
+# Gophermart
 
-Шаблон репозитория для индивидуального дипломного проекта курса «Go-разработчик»
+Накопительная система лояльности с HTTP API, PostgreSQL и фоновой проверкой начислений.
 
-# Начало работы
+## Запуск
 
-1. Склонируйте репозиторий в любую подходящую директорию на вашем компьютере.
-2. В корне репозитория выполните команду `go mod init <name>` (где `<name>` — адрес вашего репозитория на GitHub без
-   префикса `https://`) для создания модуля
-
-# Обновление шаблона
-
-Чтобы иметь возможность получать обновления автотестов и других частей шаблона, выполните команду:
-
-```
-git remote add -m master template https://github.com/yandex-praktikum/go-musthave-diploma-tpl.git
+```bash
+make local
+make run
 ```
 
-Для обновления кода автотестов выполните команду:
+Полный стек в Docker:
 
-```
-git fetch template && git checkout template/master .github
+```bash
+docker compose --env-file .env.dev up --build
 ```
 
-Затем добавьте полученные изменения в свой репозиторий.
+## Конфигурация
+
+`DATABASE_URI` можно не задавать: строка подключения собирается из `DB_HOST` (по умолчанию
+`localhost`), `DB_PORT`, `DB_USER`, `DB_PASSWORD`, `DB_TABLE_NAME` и `DB_SSLMODE`
+(по умолчанию `disable`). Явный `DATABASE_URI` или флаг `-d` имеют приоритет над частями.
+
+## Команды
+
+```bash
+make build-dev
+make migrate
+make test
+make test-ci
+```
+
+Тесты БД идут в схему `gophermart_test` той же базы, которую поднимает `make local`,
+и пропускаются, если `TEST_DATABASE_URI` не задан.

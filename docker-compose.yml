@@ -1,0 +1,27 @@
+name: gophermart
+
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: ${DB_USER:-gophermart}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-gophermart}
+      POSTGRES_DB: ${DB_TABLE_NAME:-gophermart}
+    ports:
+      - "${DB_PORT:-5432}:5432"
+
+  app:
+    build: .
+    environment:
+      RUN_ADDRESS: :8080
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_USER: ${DB_USER:-gophermart}
+      DB_PASSWORD: ${DB_PASSWORD:-gophermart}
+      DB_TABLE_NAME: ${DB_TABLE_NAME:-gophermart}
+      ACCRUAL_SYSTEM_ADDRESS: ${ACCRUAL_SYSTEM_ADDRESS:-http://localhost:8081}
+      AUTH_SECRET: ${AUTH_SECRET:?AUTH_SECRET is required}
+    ports:
+      - "${RUN_PORT:-8080}:8080"
+    depends_on:
+      - postgres

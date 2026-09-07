@@ -21,3 +21,13 @@ vendor/
 # IDEs directories
 .idea
 .vscode
+
+coverage.out
+*.log
+
+bin/
+
+.env
+
+.env.dev
+

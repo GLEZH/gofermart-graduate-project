@@ -1,0 +1,131 @@
+package accrual
+
+import (
+	"context"
+	"errors"
+	"testing"
+	"time"
+
+	"github.com/GLEZH/gofermart-graduate-project/internal/domain/loyalty"
+	"github.com/GLEZH/gofermart-graduate-project/internal/domain/order"
+)
+
+type fakeCalculator struct {
+	calculation Calculation
+	err         error
+}
+
+func (f fakeCalculator) Calculate(context.Context, order.Number) (Calculation, error) {
+	return f.calculation, f.err
+}
+
+type fakeOrders struct {
+	pending  []order.Order
+	status   order.Status
+	amount   loyalty.Amount
+	deferred time.Duration
+	defers   int
+	err      error
+}
+
+func (f *fakeOrders) Pending(context.Context, int) ([]order.Order, error) { return f.pending, f.err }
+func (f *fakeOrders) UpdateStatus(_ context.Context, _ order.Number, status order.Status) error {
+	f.status = status
+	return f.err
+}
+
+func (f *fakeOrders) Defer(_ context.Context, _ order.Number, retryAfter time.Duration) error {
+	f.deferred = retryAfter
+	f.defers++
+	return f.err
+}
+func (f *fakeOrders) Settle(_ context.Context, _ order.Number, amount *loyalty.Amount) error {
+	f.status = order.StatusProcessed
+	if amount != nil {
+		f.amount = *amount
+	}
+	return f.err
+}
+
+func TestProcessor(t *testing.T) {
+	amount := loyalty.Amount(50050)
+	tests := []struct {
+		name       string
+		result     Calculation
+		calculator error
+		wantStatus order.Status
+		wantAmount loyalty.Amount
+		wantErr    bool
+	}{
+		{name: "not found", result: Calculation{Found: false}},
+		{name: "registered", result: Calculation{Found: true, Status: "REGISTERED"}, wantStatus: order.StatusNew},
+		{name: "processing", result: Calculation{Found: true, Status: "PROCESSING"}, wantStatus: order.StatusProcessing},
+		{name: "invalid", result: Calculation{Found: true, Status: "INVALID"}, wantStatus: order.StatusInvalid},
+		{name: "processed", result: Calculation{Found: true, Status: "PROCESSED", Accrual: &amount}, wantStatus: order.StatusProcessed, wantAmount: amount},
+		{name: "processed without amount", result: Calculation{Found: true, Status: "PROCESSED"}, wantStatus: order.StatusProcessed},
+		{name: "unknown", result: Calculation{Found: true, Status: "UNKNOWN"}, wantErr: true},
+		{name: "client error", calculator: errors.New("client"), wantErr: true},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			store := &fakeOrders{}
+			processor := NewProcessor(fakeCalculator{calculation: test.result, err: test.calculator}, store, time.Second)
+			err := processor.Process(context.Background(), order.Order{Number: "9278923470"})
+			if (err != nil) != test.wantErr || store.status != test.wantStatus || store.amount != test.wantAmount {
+				t.Fatalf("Process() status=%s amount=%s error=%v", store.status, store.amount.String(), err)
+			}
+		})
+	}
+}
+
+func TestProcessorPendingAndRateLimit(t *testing.T) {
+	store := &fakeOrders{pending: []order.Order{{Number: "9278923470"}}}
+	processor := NewProcessor(fakeCalculator{}, store, time.Second)
+	items, err := processor.Pending(context.Background(), 1)
+	if err != nil || len(items) != 1 {
+		t.Fatalf("Pending() = %v, %v", items, err)
+	}
+	rateLimit := &RateLimitError{RetryAfter: time.Minute}
+	if rateLimit.Error() == "" {
+		t.Fatal("empty rate limit error")
+	}
+}
+
+func TestProcessorDefersUnknownOrders(t *testing.T) {
+	store := &fakeOrders{}
+	processor := NewProcessor(fakeCalculator{calculation: Calculation{Found: false}}, store, time.Second)
+
+	for _, test := range []struct {
+		attempts int
+		want     time.Duration
+	}{
+		{attempts: 0, want: time.Second},
+		{attempts: 3, want: 8 * time.Second},
+		{attempts: 6, want: time.Minute},
+		{attempts: 99, want: time.Minute},
+	} {
+		if err := processor.Process(context.Background(), order.Order{Number: "9278923470", Attempts: test.attempts}); err != nil {
+			t.Fatalf("Process() error = %v", err)
+		}
+		if store.deferred != test.want {
+			t.Fatalf("attempts=%d retryAfter = %s, want %s", test.attempts, store.deferred, test.want)
+		}
+		if store.status != "" {
+			t.Fatalf("status changed to %s for an order the accrual system does not know", store.status)
+		}
+	}
+	if store.defers != 4 {
+		t.Fatalf("defers = %d, want 4", store.defers)
+	}
+}
+
+func TestProcessorDefaultRetryInterval(t *testing.T) {
+	store := &fakeOrders{}
+	processor := NewProcessor(fakeCalculator{calculation: Calculation{Found: false}}, store, 0)
+	if err := processor.Process(context.Background(), order.Order{Number: "9278923470"}); err != nil {
+		t.Fatalf("Process() error = %v", err)
+	}
+	if store.deferred != defaultRetryInterval {
+		t.Fatalf("retryAfter = %s, want %s", store.deferred, defaultRetryInterval)
+	}
+}

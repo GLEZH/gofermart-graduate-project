@@ -1,0 +1,11 @@
+name: gophermart-dev
+
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: ${DB_USER:-gophermart}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-gophermart}
+      POSTGRES_DB: ${DB_TABLE_NAME:-gophermart}
+    ports:
+      - "${DB_PORT:-5432}:5432"
